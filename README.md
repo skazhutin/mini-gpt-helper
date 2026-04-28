@@ -120,7 +120,7 @@ Grant permissions to the built app in:
 - `System Settings > Privacy & Security > Accessibility`
 - `System Settings > Privacy & Security > Input Monitoring`
 
-The bundle uses a native launcher and runs against the current repo checkout plus `.venv`, so permission prompts should be attributed to `mini-gpt-helper.app`.
+You can use app without this permissions, but you will not be able to use shortcuts.
 
 ## Limitations
 
