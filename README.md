@@ -1,58 +1,45 @@
 # mini-gpt-helper
 
-Minimal macOS menu bar app that sends clipboard text or images to AI and copies the result back to your clipboard.
+`mini-gpt-helper` is a native macOS menu bar app that sends clipboard text or images to ChatGPT or Gemini and writes the model response back to the clipboard.
 
-## Features
+## What It Does
 
-- Menu bar only app (agent app, no Dock icon when bundled with `Info.plist` `LSUIElement=1`)
-- Status indicator:
-  - `●` idle
-  - `…` processing
-  - `✓` success
-  - `!` error
-- Custom status menu with:
-  - instruction field
-  - `Send`
-  - `Show`
-  - `Theme`
-  - `Quit`
-- Separate output window opened by `Show`
-- Theme toggle updates the custom menu content and output window
-- Global hotkey (mandatory format): `Control + Shift + <key from config>`
-  - default is `Control + Shift + Space`
-  - processes clipboard immediately
-  - writes result back to clipboard
-- Clipboard support:
-  - text
-  - image (PNG/TIFF converted to base64 PNG)
-- AI provider in config:
-  - `chatgpt` (default, uses `gpt-4o-mini`)
-  - `gemini` (uses `gemini-2.0-flash` REST API)
+- Lives in the macOS menu bar with no Dock icon when bundled
+- Processes clipboard text and images
+- Supports `chatgpt` and `gemini`
+- Lets you add an optional instruction before sending
+- Opens the config file directly from a small `Cfg` button in the menu
+- Shows the latest output in a separate window
+- Supports a global hotkey: `Control + Shift + <configured key>`
+- Persists theme changes back to the config file
 
-## Project layout
+## Quick Start
 
-- `main.py` - app delegate and workflow orchestration
-- `menubar.py` - status bar item controller
-- `popover.py` - custom menu content view controller
-- `output_window.py` - separate output window controller
-- `clipboard.py` - NSPasteboard text/image read/write
-- `openai_client.py` - provider-aware AI client (ChatGPT/Gemini)
-- `hotkey.py` - global hotkey monitor
-- `state.py` - app state model
-- `config.py` - config loader
-- `config.json.example` - sample config
-- `build_app.sh` - native macOS app bundle builder
-- `native_launcher.c` - native launcher used by the bundled app
+1. Create a virtual environment and install dependencies:
 
-## Configuration
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
 
-1. Copy sample config:
+2. Create a local config:
 
 ```bash
 cp config.json.example config.json
 ```
 
-2. Choose provider/theme/hotkey in `config.json`:
+3. Fill in either `openai_api_key` or `gemini_api_key`, or export env vars.
+
+4. Run the app:
+
+```bash
+python main.py
+```
+
+## Configuration
+
+Default config:
 
 ```json
 {
@@ -60,94 +47,83 @@ cp config.json.example config.json
   "theme": "light",
   "hotkey_key": "space",
   "logging": 0,
+  "prompt": "",
+  "openai_model": "gpt-4o-mini",
+  "gemini_model": "gemini-2.5-flash",
   "openai_api_key": "",
   "gemini_api_key": ""
 }
 ```
 
-`hotkey_key` examples: `space`, `a`, `b`, `1`, `2`, `-`, `=`.
-`logging`: `1` enables verbose terminal logs, `0` disables them.
-`openai_api_key` and `gemini_api_key` can be stored in `config.json` if you do not want to export env vars.
+Notes:
 
-3. Set API key.
+- `provider`: `chatgpt` or `gemini`
+- `prompt`: base prompt that is prepended to the per-run input from the menu
+- `openai_model`: model name for ChatGPT requests
+- `gemini_model`: model name for Gemini requests
+- `hotkey_key`: examples include `space`, `a`, `b`, `1`, `2`, `-`, `=`
+- `logging`: `1` enables verbose logs, `0` disables them
+- `config.json` is intentionally gitignored
+- `APP_CONFIG_PATH` can point to a config file outside the repo
 
-You can keep keys either in `config.json` or in environment variables. Environment variables override the config file.
-
-- ChatGPT provider in `config.json`:
-
-```json
-"openai_api_key": "your_openai_api_key"
-```
-
-- Gemini provider in `config.json`:
-
-```json
-"gemini_api_key": "your_gemini_api_key"
-```
-
-Or export them from the shell:
-
-- ChatGPT provider:
-
-```bash
-export OPENAI_API_KEY="your_openai_api_key"
-```
-
-- Gemini provider:
-
-```bash
-export GEMINI_API_KEY="your_gemini_api_key"
-```
-
-Optional env overrides:
+Supported environment variables:
 
 - `AI_PROVIDER=chatgpt|gemini`
 - `APP_THEME=light|dark`
 - `HOTKEY_KEY=space|a|...`
 - `APP_LOGGING=0|1`
+- `APP_PROMPT=...`
+- `OPENAI_MODEL=...`
+- `GEMINI_MODEL=...`
 - `OPENAI_API_KEY=...`
 - `GEMINI_API_KEY=...`
+- `GOOGLE_API_KEY=...`
+- `APP_CONFIG_PATH=/absolute/or/relative/path/to/config.json`
 
-## Run
+## Providers
+
+- ChatGPT uses the OpenAI Python SDK with `gpt-4o-mini` by default.
+- Gemini uses the official `google-genai` SDK with `gemini-2.5-flash` by default.
+
+If Gemini fails with SSL verification errors, make sure your proxy or antivirus root certificate is trusted by the system, or set `SSL_CERT_FILE` to a CA bundle that trusts it.
+
+## Development
+
+Run tests:
 
 ```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python main.py
+python3 -m unittest
 ```
 
-Recommended for development: use a stable python.org Python release such as 3.12 or 3.13, not a prerelease interpreter.
+Main files:
 
-If Gemini fails with an SSL verification error, reinstall dependencies and make sure `certifi` is installed. The app uses the `certifi` CA bundle for Gemini HTTPS requests.
+- `main.py` - app bootstrap and workflow
+- `gpt_client.py` - AI provider client
+- `clipboard.py` - clipboard read/write
+- `popover.py` - menu UI
+- `output_window.py` - output window
+- `hotkey.py` - global hotkey handling
+- `config.py` - config loading and saving
 
 ## Build macOS App
 
-If you want macOS Accessibility / Input Monitoring permissions to be requested for `mini-gpt-helper.app` itself, run the app as a real bundled macOS application instead of `python main.py`.
-
-Build it with:
+Build the app bundle:
 
 ```bash
 ./build_app.sh
 ```
 
-The built app will appear at:
+The result is created at `dist/mini-gpt-helper.app`.
 
-```bash
-dist/mini-gpt-helper.app
-```
-
-Grant permissions to that bundled app in:
+Grant permissions to the built app in:
 
 - `System Settings > Privacy & Security > Accessibility`
 - `System Settings > Privacy & Security > Input Monitoring`
 
-This bundle uses a native launcher executable and points at the current repo checkout plus `.venv`, so permissions should be attributed to `mini-gpt-helper.app` rather than `Python`.
+The bundle uses a native launcher and runs against the current repo checkout plus `.venv`, so permission prompts should be attributed to `mini-gpt-helper.app`.
 
-## Notes on no Dock icon
+## Limitations
 
-`LSUIElement` in `Info.plist` is used when launching as a bundled app.
-
-When running directly with `python main.py`, Dock behavior can vary by runtime.
-
-The app must be launched from an active macOS desktop session. If you start it from a headless shell or automation runner, AppKit can abort before Python prints a traceback.
+- The app must be launched from an active macOS desktop session.
+- When running directly with `python main.py`, Dock behavior may vary by runtime.
+- The bundled launcher assumes the repo checkout and `.venv` remain available.

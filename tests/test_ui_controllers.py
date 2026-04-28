@@ -16,6 +16,7 @@ class FakeButton:
         self.target = None
         self.action = None
         self.enabled = True
+        self.font = None
 
     def setTitle_(self, title):
         self.title = title
@@ -28,6 +29,9 @@ class FakeButton:
 
     def setEnabled_(self, enabled):
         self.enabled = enabled
+
+    def setFont_(self, font):
+        self.font = font
 
 
 class FakeStatusItem:
@@ -107,6 +111,7 @@ class PopoverControllerTests(unittest.TestCase):
             {
                 "send": lambda _value: None,
                 "show": lambda: None,
+                "config": lambda: None,
                 "theme": lambda: None,
                 "quit": lambda: None,
             }
@@ -118,6 +123,7 @@ class PopoverControllerTests(unittest.TestCase):
             {
                 "send": lambda value: seen.append(value),
                 "show": lambda: None,
+                "config": lambda: None,
                 "theme": lambda: None,
                 "quit": lambda: None,
             }
@@ -126,20 +132,22 @@ class PopoverControllerTests(unittest.TestCase):
         controller.sendClicked_(None)
         self.assertEqual(seen, ["hello"])
 
-    def test_show_theme_and_quit_buttons_invoke_callbacks(self):
+    def test_show_config_theme_and_quit_buttons_invoke_callbacks(self):
         seen = []
         controller = popover.PopoverViewController.alloc().initWithCallbacks_(
             {
                 "send": lambda _value: None,
                 "show": lambda: seen.append("show"),
+                "config": lambda: seen.append("config"),
                 "theme": lambda: seen.append("theme"),
                 "quit": lambda: seen.append("quit"),
             }
         )
         controller.showClicked_(None)
+        controller.configClicked_(None)
         controller.themeClicked_(None)
         controller.quitClicked_(None)
-        self.assertEqual(seen, ["show", "theme", "quit"])
+        self.assertEqual(seen, ["show", "config", "theme", "quit"])
 
     def test_apply_theme_updates_background_and_button_title(self):
         controller = self._make_controller()
@@ -174,10 +182,13 @@ class PopoverControllerTests(unittest.TestCase):
 class MainTests(unittest.TestCase):
     def _make_delegate(self, hotkey_ready=True):
         config = main.AppConfig(provider="chatgpt", theme="light", hotkey_key="space", logging=0)
+        config.save = Mock()
         fake_menu_bar = Mock()
         fake_menu_view = Mock()
         fake_menu_view.view.return_value = "menu-view"
         fake_output_window = Mock()
+        fake_workspace = Mock()
+        fake_workspace.openURL_.return_value = True
         fake_hotkey = Mock()
         fake_hotkey.start.return_value = hotkey_ready
         fake_menu = Mock()
@@ -197,6 +208,8 @@ class MainTests(unittest.TestCase):
             patch("main.PopoverViewController", new=Mock(alloc=Mock(return_value=Mock(initWithCallbacks_=Mock(return_value=fake_menu_view))))),
             patch("main.OutputWindowController", return_value=fake_output_window),
             patch("main.GlobalHotkey", return_value=fake_hotkey),
+            patch("main.NSWorkspace", new=Mock(sharedWorkspace=Mock(return_value=fake_workspace))),
+            patch("main.NSURL", new=Mock(fileURLWithPath_=Mock(side_effect=lambda path: f"url:{path}"))),
             patch("main.NSMenu", new=fake_menu_class),
             patch("main.NSMenuItem", new=fake_menu_item_class),
             patch("main.set_enabled"),
@@ -207,7 +220,16 @@ class MainTests(unittest.TestCase):
             self.addCleanup(item.stop)
 
         delegate = main.AppDelegate.alloc().init()
-        return delegate, fake_hotkey, fake_menu_bar, fake_menu_view, fake_output_window, fake_menu, fake_menu_item
+        return (
+            delegate,
+            fake_hotkey,
+            fake_menu_bar,
+            fake_menu_view,
+            fake_output_window,
+            fake_workspace,
+            fake_menu,
+            fake_menu_item,
+        )
 
     def test_ensure_gui_session_raises_without_session(self):
         with patch.object(main, "CGSessionCopyCurrentDictionary", return_value=None):
@@ -219,7 +241,7 @@ class MainTests(unittest.TestCase):
             main.ensure_gui_session()
 
     def test_delegate_builds_status_menu_and_starts_hotkey(self):
-        delegate, fake_hotkey, fake_menu_bar, fake_menu_view, _output_window, fake_menu, fake_menu_item = self._make_delegate(True)
+        delegate, fake_hotkey, fake_menu_bar, fake_menu_view, _output_window, _workspace, fake_menu, fake_menu_item = self._make_delegate(True)
         fake_app = Mock()
 
         with patch.object(main, "NSApp", return_value=fake_app):
@@ -232,7 +254,7 @@ class MainTests(unittest.TestCase):
         self.assertIsNone(delegate.state.last_error)
 
     def test_delegate_records_hotkey_failure(self):
-        delegate, fake_hotkey, _menu_bar, fake_menu_view, _output_window, _menu, _item = self._make_delegate(False)
+        delegate, fake_hotkey, _menu_bar, fake_menu_view, _output_window, _workspace, _menu, _item = self._make_delegate(False)
         fake_app = Mock()
 
         with patch.object(main, "NSApp", return_value=fake_app):
@@ -243,19 +265,26 @@ class MainTests(unittest.TestCase):
         fake_menu_view.setOutput_.assert_called()
 
     def test_toggle_theme_updates_menu_and_output_window(self):
-        delegate, _fake_hotkey, _menu_bar, fake_menu_view, fake_output_window, fake_menu, _item = self._make_delegate(True)
+        delegate, _fake_hotkey, _menu_bar, fake_menu_view, fake_output_window, _workspace, fake_menu, _item = self._make_delegate(True)
         delegate.toggle_theme()
         self.assertEqual(fake_menu_view.applyTheme_.call_args_list[-1].args, ("dark",))
         self.assertEqual(fake_output_window.apply_theme.call_args_list[-1].args, ("dark",))
         self.assertTrue(fake_menu.setAppearance_.called)
         self.assertTrue(fake_menu.update.called)
+        delegate.config.save.assert_called_once_with()
 
     def test_show_output_window_uses_last_response(self):
-        delegate, _fake_hotkey, _menu_bar, _menu_view, fake_output_window, _menu, _item = self._make_delegate(True)
+        delegate, _fake_hotkey, _menu_bar, _menu_view, fake_output_window, _workspace, _menu, _item = self._make_delegate(True)
         delegate.state.last_response = "result"
         delegate.show_output_window()
         fake_output_window.set_text.assert_called_once_with("result")
         fake_output_window.show.assert_called_once_with()
+
+    def test_open_config_uses_workspace(self):
+        delegate, _fake_hotkey, _menu_bar, _menu_view, _output_window, fake_workspace, _menu, _item = self._make_delegate(True)
+        delegate.config.path = "/tmp/mini-gpt-helper-config.json"
+        delegate.open_config()
+        fake_workspace.openURL_.assert_called_once_with("url:/tmp/mini-gpt-helper-config.json")
 
     def test_process_clipboard_success_path_updates_state(self):
         delegate = types.SimpleNamespace(

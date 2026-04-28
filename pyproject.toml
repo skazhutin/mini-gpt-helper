@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mini-gpt-helper"
+version = "0.1.0"
+description = "Native macOS menu bar app for sending clipboard text or images to ChatGPT or Gemini."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+  { name = "Daniil" }
+]
+dependencies = [
+  "pyobjc-core>=10.3",
+  "pyobjc-framework-Cocoa>=10.3",
+  "pyobjc-framework-Quartz>=10.3",
+  "openai>=1.40.0",
+  "google-genai>=1.0.0",
+]
+
+[project.scripts]
+mini-gpt-helper = "main:main"
+
+[tool.setuptools]
+py-modules = [
+  "app_logging",
+  "clipboard",
+  "config",
+  "gpt_client",
+  "hotkey",
+  "main",
+  "menubar",
+  "output_window",
+  "popover",
+  "state",
+]

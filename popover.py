@@ -45,7 +45,7 @@ class MenuRootView(NSView):
 
 
 class PopoverViewController(NSViewController):
-    menu_size = (360.0, 132.0)
+    menu_size = (300.0, 80.0)
 
     def initWithCallbacks_(self, callbacks: dict[str, Callable[[], None] | Callable[[str], None]]):
         self = super().init()
@@ -65,10 +65,19 @@ class PopoverViewController(NSViewController):
         self.setView_(root)
 
         self.input_field = NSTextField.alloc().initWithFrame_(NSMakeRect(12, height - 38, width - 24, 24))
-        self.input_field.cell().setPlaceholderString_("Optional instruction...")
+        self.input_field.setFrame_(NSMakeRect(12, height - 34, width - 64, 22))
+        input_cell = self.input_field.cell()
+        input_cell.setPlaceholderString_("Extra comments...")
+        input_cell.setUsesSingleLineMode_(True)
+        input_cell.setScrollable_(True)
+        input_cell.setWraps_(False)
         root.addSubview_(self.input_field)
 
-        self.status_label = NSTextField.alloc().initWithFrame_(NSMakeRect(12, height - 64, width - 24, 16))
+        self.config_button = self._make_button("Cfg", NSMakeRect(width - 44, height - 35, 32, 24), "configClicked:")
+        self.config_button.setFont_(NSFont.systemFontOfSize_(11))
+        root.addSubview_(self.config_button)
+
+        self.status_label = NSTextField.alloc().initWithFrame_(NSMakeRect(12, height - 58, width - 24, 15))
         self.status_label.setBezeled_(False)
         self.status_label.setDrawsBackground_(False)
         self.status_label.setEditable_(False)
@@ -77,17 +86,17 @@ class PopoverViewController(NSViewController):
         self.status_label.setStringValue_("")
         root.addSubview_(self.status_label)
 
-        self.send_button = self._make_button("Send", NSMakeRect(12, 42, 78, 28), "sendClicked:")
+        self.send_button = self._make_button("Send", NSMakeRect(12, 12, 64, 26), "sendClicked:")
         root.addSubview_(self.send_button)
 
-        self.show_button = self._make_button("Show", NSMakeRect(100, 42, 78, 28), "showClicked:")
+        self.show_button = self._make_button("Show", NSMakeRect(86, 12, 64, 26), "showClicked:")
         self.show_button.setEnabled_(False)
         root.addSubview_(self.show_button)
 
-        self.theme_button = self._make_button("Theme: Light", NSMakeRect(188, 42, 112, 28), "themeClicked:")
+        self.theme_button = self._make_button("Light", NSMakeRect(158, 12, 64, 26), "themeClicked:")
         root.addSubview_(self.theme_button)
 
-        self.quit_button = self._make_button("Quit", NSMakeRect(310, 42, 38, 28), "quitClicked:")
+        self.quit_button = self._make_button("Q", NSMakeRect(222, 12, 64, 26), "quitClicked:")
         root.addSubview_(self.quit_button)
 
         log(f"Menu view loaded with size=({width}, {height})")
@@ -121,6 +130,10 @@ class PopoverViewController(NSViewController):
         log("Menu Show button pressed")
         self.callbacks["show"]()
 
+    def configClicked_(self, _sender):
+        log("Menu Config button pressed")
+        self.callbacks["config"]()
+
     def themeClicked_(self, _sender):
         log("Menu Theme button pressed")
         self.callbacks["theme"]()
@@ -144,7 +157,7 @@ class PopoverViewController(NSViewController):
             else NSColor.colorWithCalibratedWhite_alpha_(0.96, 1.0)
         )
         root.setBackgroundColor_(background_color)
-        self.theme_button.setTitle_(f"Theme: {'Dark' if is_dark else 'Light'}")
+        self.theme_button.setTitle_(f"{'Dark' if is_dark else 'Light'}")
         text_color = NSColor.secondaryLabelColor()
         self.status_label.setTextColor_(text_color)
 

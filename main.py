@@ -7,9 +7,9 @@ import signal
 import sys
 import threading
 import traceback
-from pathlib import Path
 
 from app_logging import log, set_enabled
+from config import resolve_config_path
 
 
 def _load_bootstrap_logging_flag(path: str = "config.json") -> bool:
@@ -20,7 +20,7 @@ def _load_bootstrap_logging_flag(path: str = "config.json") -> bool:
         return False
 
     try:
-        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+        raw = json.loads(resolve_config_path(path).read_text(encoding="utf-8"))
     except FileNotFoundError:
         return False
     except Exception:
@@ -53,17 +53,18 @@ from AppKit import (
     NSApplicationActivationPolicyAccessory,
     NSMenu,
     NSMenuItem,
+    NSWorkspace,
 )
-from Foundation import NSObject
+from Foundation import NSObject, NSURL
 from PyObjCTools import AppHelper
 from objc import super
 from Quartz import CGSessionCopyCurrentDictionary
 
 from clipboard import ClipboardPayload, ClipboardService
 from config import AppConfig
+from gpt_client import AIClipboardClient
 from hotkey import GlobalHotkey
 from menubar import MenuBarController
-from openai_client import AIClipboardClient
 from output_window import OutputWindowController
 from popover import PopoverViewController
 from state import AppState, MenuStatus
@@ -98,8 +99,11 @@ class AppDelegate(NSObject):
         self.clipboard = ClipboardService()
         self.client = AIClipboardClient(
             provider=self.config.provider,
+            openai_model=self.config.openai_model,
             openai_api_key=self.config.openai_api_key,
             gemini_api_key=self.config.gemini_api_key,
+            gemini_model=self.config.gemini_model,
+            prompt=self.config.prompt,
         )
         self.menu = MenuBarController()
         self._in_flight = False
@@ -109,6 +113,7 @@ class AppDelegate(NSObject):
             {
                 "send": self.handle_send,
                 "show": self.show_output_window,
+                "config": self.open_config,
                 "theme": self.toggle_theme,
                 "quit": self.quit_application,
             }
@@ -156,6 +161,10 @@ class AppDelegate(NSObject):
     def toggle_theme(self):
         self.config.theme = "dark" if self.config.theme == "light" else "light"
         log(f"Theme toggled to {self.config.theme}")
+        try:
+            self.config.save()
+        except Exception as exc:  # noqa: BLE001
+            log(f"Failed to save config after theme toggle: {exc}")
         self._apply_theme(self.config.theme)
 
     def handle_send(self, instruction: str):
@@ -170,6 +179,16 @@ class AppDelegate(NSObject):
         text = self.state.last_response or self.state.last_error or "No output yet."
         self.output_window.set_text(text)
         self.output_window.show()
+
+    def open_config(self):
+        config_path = resolve_config_path(self.config.path)
+        if not config_path.exists():
+            self.config.path = str(config_path)
+            self.config.save()
+
+        opened = NSWorkspace.sharedWorkspace().openURL_(NSURL.fileURLWithPath_(str(config_path)))
+        if not opened:
+            raise RuntimeError(f"Could not open config file: {config_path}")
 
     def quit_application(self):
         log("Terminating application")
@@ -248,7 +267,7 @@ def install_signal_handlers(delegate: AppDelegate) -> None:
     log("Installed SIGINT/SIGTERM handlers")
 
 
-if __name__ == "__main__":
+def main() -> None:
     _install_bootstrap_debug()
     ensure_gui_session()
     log("Starting app bootstrap")
@@ -258,3 +277,7 @@ if __name__ == "__main__":
     install_signal_handlers(delegate)
     log("Entering AppKit event loop")
     AppHelper.runEventLoop(installInterrupt=True)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,11 +1,7 @@
+.venv/
 __pycache__/
 *.pyc
-.env
-.venv/
-source/
 build/
 dist/
-*.egg-info/
-config.json
-run.log
 .DS_Store
+config.json

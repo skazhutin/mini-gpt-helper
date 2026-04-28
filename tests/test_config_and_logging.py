@@ -9,7 +9,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 
 import app_logging
-from config import AppConfig, _normalize_logging_flag
+from config import AppConfig, _normalize_logging_flag, resolve_config_path
 from state import AppState
 
 
@@ -34,6 +34,9 @@ class ConfigTests(unittest.TestCase):
                         "theme": "dark",
                         "hotkey_key": "A",
                         "logging": "1",
+                        "prompt": "file-prompt",
+                        "openai_model": "file-openai-model",
+                        "gemini_model": "file-gemini-model",
                         "openai_api_key": "file-openai",
                         "gemini_api_key": "file-gemini",
                     },
@@ -47,6 +50,9 @@ class ConfigTests(unittest.TestCase):
                     "APP_THEME": "light",
                     "HOTKEY_KEY": "b",
                     "APP_LOGGING": "0",
+                    "APP_PROMPT": "env-prompt",
+                    "OPENAI_MODEL": "env-openai-model",
+                    "GEMINI_MODEL": "env-gemini-model",
                     "OPENAI_API_KEY": "env-openai",
                     "GEMINI_API_KEY": "env-gemini",
                 },
@@ -58,8 +64,12 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(cfg.theme, "light")
         self.assertEqual(cfg.hotkey_key, "b")
         self.assertEqual(cfg.logging, 0)
+        self.assertEqual(cfg.prompt, "env-prompt")
+        self.assertEqual(cfg.openai_model, "env-openai-model")
+        self.assertEqual(cfg.gemini_model, "env-gemini-model")
         self.assertEqual(cfg.openai_api_key, "env-openai")
         self.assertEqual(cfg.gemini_api_key, "env-gemini")
+        self.assertEqual(cfg.path, path)
 
     def test_invalid_file_values_fall_back_to_defaults(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -90,6 +100,60 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(_normalize_logging_flag("yes", 0), 1)
         self.assertEqual(_normalize_logging_flag("off", 1), 0)
         self.assertEqual(_normalize_logging_flag("bogus", 1), 1)
+
+    def test_load_uses_app_config_path_env(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "custom.json")
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump({"theme": "dark"}, fh)
+
+            with patch.dict(os.environ, {"APP_CONFIG_PATH": path}, clear=False):
+                cfg = AppConfig.load()
+
+        self.assertEqual(cfg.theme, "dark")
+        self.assertEqual(cfg.path, path)
+
+    def test_save_writes_current_config(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "config.json")
+            cfg = AppConfig(
+                provider="gemini",
+                theme="dark",
+                hotkey_key="h",
+                logging=1,
+                prompt="base prompt",
+                openai_model="gpt-test",
+                gemini_model="gemini-test",
+                openai_api_key="openai",
+                gemini_api_key="gemini",
+                path=path,
+            )
+
+            cfg.save()
+
+            with open(path, "r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+
+        self.assertEqual(
+            payload,
+            {
+                "provider": "gemini",
+                "theme": "dark",
+                "hotkey_key": "h",
+                "logging": 1,
+                "prompt": "base prompt",
+                "openai_model": "gpt-test",
+                "gemini_model": "gemini-test",
+                "openai_api_key": "openai",
+                "gemini_api_key": "gemini",
+            },
+        )
+
+    def test_resolve_config_path_expands_home(self):
+        with patch.dict(os.environ, {"APP_CONFIG_PATH": "~/mini-gpt-helper.json"}, clear=False):
+            resolved = resolve_config_path()
+
+        self.assertTrue(str(resolved).endswith("mini-gpt-helper.json"))
 
 
 class AppLoggingTests(unittest.TestCase):
