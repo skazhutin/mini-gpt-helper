@@ -15,6 +15,7 @@ from AppKit import (
     NSTextField,
     NSTextView,
 )
+from objc import super
 
 
 class PopoverViewController(NSViewController):
