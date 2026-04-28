@@ -37,10 +37,16 @@ class ClipboardService:
         tiff_data = self.pb.dataForType_(NSPasteboardTypeTIFF)
         if tiff_data is not None:
             image = NSImage.alloc().initWithData_(tiff_data)
-            rep = NSBitmapImageRep.imageRepWithData_(image.TIFFRepresentation())
-            if rep is not None:
-                png = rep.representationUsingType_properties_(NSBitmapImageFileTypePNG, None)
-                return ClipboardPayload(image_b64=base64.b64encode(bytes(png)).decode("utf-8"))
+            if image is not None:
+                image_tiff_data = image.TIFFRepresentation()
+                if image_tiff_data is not None:
+                    rep = NSBitmapImageRep.imageRepWithData_(image_tiff_data)
+                    if rep is not None:
+                        png = rep.representationUsingType_properties_(NSBitmapImageFileTypePNG, None)
+                        if png is not None:
+                            return ClipboardPayload(
+                                image_b64=base64.b64encode(bytes(png)).decode("utf-8")
+                            )
 
         return ClipboardPayload()
 

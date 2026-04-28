@@ -6,13 +6,14 @@ from AppKit import (
     NSApp,
     NSApplication,
     NSApplicationActivationPolicyAccessory,
+    NSMinYEdge,
     NSPopover,
     NSPopoverBehaviorTransient,
 )
 from Foundation import NSObject
 from PyObjCTools import AppHelper
 
-from clipboard import ClipboardService
+from clipboard import ClipboardPayload, ClipboardService
 from config import AppConfig
 from hotkey import GlobalHotkey
 from menubar import MenuBarController
@@ -34,8 +35,9 @@ class AppDelegate(NSObject):
         self.menu = MenuBarController(self, "togglePopover:")
         self.popover = NSPopover.alloc().init()
         self.popover.setBehavior_(NSPopoverBehaviorTransient)
+        self._in_flight = False
 
-        self.popover_controller = PopoverViewController.alloc().initWithCallbacks_(
+        self.popover_controller = PopoverViewController.alloc().initWithSendCallback_themeCallback_(
             self.handle_send,
             self.toggle_theme,
         )
@@ -56,7 +58,7 @@ class AppDelegate(NSObject):
         else:
             size = self.popover_controller.expanded_size if self.popover_controller.expanded else self.popover_controller.compact_size
             self.popover.setContentSize_(size)
-            self.popover.showRelativeToRect_ofView_preferredEdge_(button.bounds(), button, 1)
+            self.popover.showRelativeToRect_ofView_preferredEdge_(button.bounds(), button, NSMinYEdge)
 
     def toggle_theme(self):
         self.config.theme = "dark" if self.config.theme == "light" else "light"
@@ -69,29 +71,35 @@ class AppDelegate(NSObject):
         self._process_clipboard("")
 
     def _process_clipboard(self, instruction: str):
+        if self._in_flight:
+            return
+
+        payload = self.clipboard.read()
+        self._in_flight = True
         self._set_status(MenuStatus.PROCESSING)
         self.popover_controller.setBusy_(True)
 
-        def worker():
+        def worker(copied_payload: ClipboardPayload):
             try:
-                payload = self.clipboard.read()
-                result = self.client.complete(instruction, payload)
-                self.clipboard.write_text(result)
-                self.state.last_response = result
-                self.state.last_error = None
+                result = self.client.complete(instruction, copied_payload)
                 AppHelper.callAfter(self._on_success, result)
             except Exception as exc:  # noqa: BLE001
-                self.state.last_error = str(exc)
                 AppHelper.callAfter(self._on_error, str(exc))
 
-        threading.Thread(target=worker, daemon=True).start()
+        threading.Thread(target=worker, args=(payload,), daemon=True).start()
 
     def _on_success(self, result: str):
+        self.clipboard.write_text(result)
+        self.state.last_response = result
+        self.state.last_error = None
+        self._in_flight = False
         self._set_status(MenuStatus.SUCCESS)
         self.popover_controller.setBusy_(False)
         self.popover_controller.setOutput_(result)
 
     def _on_error(self, error_text: str):
+        self.state.last_error = error_text
+        self._in_flight = False
         self._set_status(MenuStatus.ERROR)
         self.popover_controller.setBusy_(False)
         self.popover_controller.setOutput_(f"Error: {error_text}")

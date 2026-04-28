@@ -21,7 +21,7 @@ class PopoverViewController(NSViewController):
     compact_size = (300.0, 120.0)
     expanded_size = (300.0, 300.0)
 
-    def initWithCallbacks_(self, send_callback: Callable[[str], None], theme_callback: Callable[[], None]):
+    def initWithSendCallback_themeCallback_(self, send_callback: Callable[[str], None], theme_callback: Callable[[], None]):
         self = super().init()
         if self is None:
             return None

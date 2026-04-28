@@ -4,6 +4,7 @@ import json
 import os
 import urllib.error
 import urllib.request
+from typing import Optional
 
 from openai import OpenAI
 
@@ -13,14 +14,21 @@ from config import Provider
 
 class AIClipboardClient:
     def __init__(self, provider: Provider = "chatgpt", model: str = "gpt-4o-mini") -> None:
+        if provider not in {"chatgpt", "gemini"}:
+            raise ValueError(f"Unsupported provider: {provider}")
         self.provider = provider
         self.openai_model = model
-        self.openai_client = OpenAI() if provider == "chatgpt" else None
+        self._openai_client: Optional[OpenAI] = None
 
     def complete(self, instruction: str, payload: ClipboardPayload) -> str:
         if self.provider == "gemini":
             return self._complete_gemini(instruction, payload)
         return self._complete_chatgpt(instruction, payload)
+
+    def _get_openai_client(self) -> OpenAI:
+        if self._openai_client is None:
+            self._openai_client = OpenAI()
+        return self._openai_client
 
     def _complete_chatgpt(self, instruction: str, payload: ClipboardPayload) -> str:
         if not payload.text and not payload.image_b64:
@@ -44,7 +52,7 @@ class AIClipboardClient:
                 }
             )
 
-        response = self.openai_client.responses.create(
+        response = self._get_openai_client().responses.create(
             model=self.openai_model,
             input=[{"role": "user", "content": content}],
         )

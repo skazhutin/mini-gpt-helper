@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from AppKit import NSEvent, NSEventMaskKeyDown
+from PyObjCTools import AppHelper
 from Quartz import (
     NSEventModifierFlagControl,
     NSEventModifierFlagShift,
@@ -49,11 +50,15 @@ class GlobalHotkey:
 
     def start(self):
         def handler(event):
+            if event is None:
+                return
+            if event.isARepeat():
+                return
             if event.keyCode() == self.key_code:
                 flags = event.modifierFlags()
                 # Mandatory combination: Control + Shift + selected key
                 if (flags & NSEventModifierFlagControl) and (flags & NSEventModifierFlagShift):
-                    self.callback()
+                    AppHelper.callAfter(self.callback)
 
         self.monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
             NSEventMaskKeyDown, handler
