@@ -45,7 +45,7 @@ class MenuRootView(NSView):
 
 
 class PopoverViewController(NSViewController):
-    menu_size = (300.0, 80.0)
+    menu_size = (300.0, 100.0)
 
     def initWithCallbacks_(self, callbacks: dict[str, Callable[[], None] | Callable[[str], None]]):
         self = super().init()
