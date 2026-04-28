@@ -12,6 +12,7 @@ from AppKit import (
 )
 from Foundation import NSObject
 from PyObjCTools import AppHelper
+from objc import super
 
 from clipboard import ClipboardPayload, ClipboardService
 from config import AppConfig
