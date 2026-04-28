@@ -9,6 +9,7 @@ from Quartz import (
     CFMachPortCreateRunLoopSource,
     CFRunLoopAddSource,
     CFRunLoopGetCurrent,
+    CFRunLoopRemoveSource,
     CGEventGetFlags,
     CGEventGetIntegerValueField,
     CGEventMaskBit,
@@ -64,7 +65,6 @@ class GlobalHotkey:
     def __init__(self, callback, key_name: str = "space"):
         self.callback = callback
         self.local_monitor = None
-        self.global_monitor = None
         self.event_tap = None
         self.run_loop_source = None
         self._last_fire_at = 0.0
@@ -140,7 +140,7 @@ class GlobalHotkey:
 
         log(
             "Hotkey monitors registered: "
-            f"local={self.local_monitor is not None}, global={self.global_monitor is not None}, "
+            f"local={self.local_monitor is not None}, "
             f"tap={self.event_tap is not None}"
         )
         return self.event_tap is not None
@@ -148,13 +148,11 @@ class GlobalHotkey:
     def stop(self):
         if self.event_tap:
             CGEventTapEnable(self.event_tap, False)
+            if self.run_loop_source is not None:
+                CFRunLoopRemoveSource(CFRunLoopGetCurrent(), self.run_loop_source, kCFRunLoopCommonModes)
+                self.run_loop_source = None
             self.event_tap = None
-            self.run_loop_source = None
-            log("Quartz event tap disabled")
-        if self.global_monitor:
-            NSEvent.removeMonitor_(self.global_monitor)
-            self.global_monitor = None
-            log("Global hotkey monitor removed")
+            log("Quartz event tap disabled and run loop source removed")
         if self.local_monitor:
             NSEvent.removeMonitor_(self.local_monitor)
             self.local_monitor = None

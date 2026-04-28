@@ -135,7 +135,10 @@ class AIClipboardClient:
             with urllib.request.urlopen(req, timeout=60, context=ssl_context) as resp:
                 payload_json = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
-            details = exc.read().decode("utf-8", errors="ignore")
+            try:
+                details = exc.read().decode("utf-8", errors="ignore")
+            finally:
+                exc.close()
             log(f"Gemini API HTTP error: status={exc.code}, details={details[:400]}")
             raise RuntimeError(f"Gemini API error: HTTP {exc.code}: {details}") from exc
         except urllib.error.URLError as exc:

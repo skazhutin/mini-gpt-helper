@@ -42,7 +42,6 @@ def _install_bootstrap_debug() -> None:
     log("Bootstrap debug initialized")
 
 
-_install_bootstrap_debug()
 log("Importing AppKit / PyObjC modules")
 
 from AppKit import (
@@ -250,6 +249,7 @@ def install_signal_handlers(delegate: AppDelegate) -> None:
 
 
 if __name__ == "__main__":
+    _install_bootstrap_debug()
     ensure_gui_session()
     log("Starting app bootstrap")
     app = NSApplication.sharedApplication()
