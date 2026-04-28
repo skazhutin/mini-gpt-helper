@@ -1,8 +1,27 @@
 from __future__ import annotations
 
+import time
+
 from AppKit import NSEvent, NSEventMaskKeyDown
+from app_logging import log
 from PyObjCTools import AppHelper
 from Quartz import (
+    CFMachPortCreateRunLoopSource,
+    CFRunLoopAddSource,
+    CFRunLoopGetCurrent,
+    CGEventGetFlags,
+    CGEventGetIntegerValueField,
+    CGEventMaskBit,
+    CGEventTapCreate,
+    CGEventTapEnable,
+    kCFRunLoopCommonModes,
+    kCGEventFlagMaskControl,
+    kCGEventFlagMaskShift,
+    kCGEventKeyDown,
+    kCGEventTapOptionListenOnly,
+    kCGHeadInsertEventTap,
+    kCGKeyboardEventKeycode,
+    kCGSessionEventTap,
     NSEventModifierFlagControl,
     NSEventModifierFlagShift,
 )
@@ -44,27 +63,99 @@ KEYCODE_MAP = {
 class GlobalHotkey:
     def __init__(self, callback, key_name: str = "space"):
         self.callback = callback
-        self.monitor = None
+        self.local_monitor = None
+        self.global_monitor = None
+        self.event_tap = None
+        self.run_loop_source = None
+        self._last_fire_at = 0.0
         normalized = key_name.lower().strip()
         self.key_code = KEYCODE_MAP.get(normalized, KEYCODE_MAP["space"])
+        log(f"GlobalHotkey initialized with key_name={normalized}, key_code={self.key_code}")
 
     def start(self):
-        def handler(event):
+        log("Starting hotkey monitors")
+
+        def dispatch_callback(source: str):
+            now = time.monotonic()
+            if now - self._last_fire_at < 0.25:
+                log(f"Ignoring duplicate hotkey event from {source}")
+                return
+            self._last_fire_at = now
+            log(f"Dispatching hotkey callback from {source}")
+            AppHelper.callAfter(self.callback)
+
+        def should_handle(event) -> bool:
             if event is None:
-                return
+                return False
             if event.isARepeat():
-                return
+                return False
             if event.keyCode() == self.key_code:
                 flags = event.modifierFlags()
-                # Mandatory combination: Control + Shift + selected key
-                if (flags & NSEventModifierFlagControl) and (flags & NSEventModifierFlagShift):
-                    AppHelper.callAfter(self.callback)
+                matched = bool((flags & NSEventModifierFlagControl) and (flags & NSEventModifierFlagShift))
+                if matched:
+                    log("Hotkey matched Control+Shift+configured key")
+                return matched
+            return False
 
-        self.monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
-            NSEventMaskKeyDown, handler
+        def tap_callback(_proxy, event_type, event, _refcon):
+            if event_type != kCGEventKeyDown:
+                return event
+
+            key_code = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
+            flags = CGEventGetFlags(event)
+            matched = (
+                key_code == self.key_code
+                and bool(flags & kCGEventFlagMaskControl)
+                and bool(flags & kCGEventFlagMaskShift)
+            )
+            if matched:
+                log("Quartz event tap received matching hotkey")
+                dispatch_callback("event_tap")
+            return event
+
+        def local_handler(event):
+            if should_handle(event):
+                log("Local hotkey monitor received matching event")
+                dispatch_callback("local_monitor")
+            return event
+
+        self.local_monitor = NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
+            NSEventMaskKeyDown, local_handler
         )
+        self.event_tap = CGEventTapCreate(
+            kCGSessionEventTap,
+            kCGHeadInsertEventTap,
+            kCGEventTapOptionListenOnly,
+            CGEventMaskBit(kCGEventKeyDown),
+            tap_callback,
+            None,
+        )
+        if self.event_tap is not None:
+            self.run_loop_source = CFMachPortCreateRunLoopSource(None, self.event_tap, 0)
+            CFRunLoopAddSource(CFRunLoopGetCurrent(), self.run_loop_source, kCFRunLoopCommonModes)
+            CGEventTapEnable(self.event_tap, True)
+            log("Quartz event tap registered")
+        else:
+            log("Quartz event tap could not be created; Accessibility permission is likely missing")
+
+        log(
+            "Hotkey monitors registered: "
+            f"local={self.local_monitor is not None}, global={self.global_monitor is not None}, "
+            f"tap={self.event_tap is not None}"
+        )
+        return self.event_tap is not None
 
     def stop(self):
-        if self.monitor:
-            NSEvent.removeMonitor_(self.monitor)
-            self.monitor = None
+        if self.event_tap:
+            CGEventTapEnable(self.event_tap, False)
+            self.event_tap = None
+            self.run_loop_source = None
+            log("Quartz event tap disabled")
+        if self.global_monitor:
+            NSEvent.removeMonitor_(self.global_monitor)
+            self.global_monitor = None
+            log("Global hotkey monitor removed")
+        if self.local_monitor:
+            NSEvent.removeMonitor_(self.local_monitor)
+            self.local_monitor = None
+            log("Local hotkey monitor removed")

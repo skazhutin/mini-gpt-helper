@@ -8,122 +8,162 @@ from AppKit import (
     NSAppearanceNameDarkAqua,
     NSBezelStyleRounded,
     NSButton,
+    NSColor,
     NSFont,
     NSMakeRect,
-    NSScrollView,
-    NSViewController,
+    NSRectFill,
     NSTextField,
-    NSTextView,
+    NSView,
+    NSViewController,
 )
 from objc import super
 
+from app_logging import log
+
+
+class MenuRootView(NSView):
+    def initWithFrame_(self, frame):
+        self = super().initWithFrame_(frame)
+        if self is None:
+            return None
+        self._background_color = NSColor.windowBackgroundColor()
+        self.setWantsLayer_(True)
+        return self
+
+    def setBackgroundColor_(self, color):
+        self._background_color = color
+        if self.layer() is not None:
+            self.layer().setBackgroundColor_(color.CGColor())
+        self.setNeedsDisplay_(True)
+
+    def isOpaque(self):
+        return True
+
+    def drawRect_(self, rect):
+        self._background_color.setFill()
+        NSRectFill(self.bounds())
+
 
 class PopoverViewController(NSViewController):
-    compact_size = (300.0, 120.0)
-    expanded_size = (300.0, 300.0)
+    menu_size = (360.0, 132.0)
 
-    def initWithSendCallback_themeCallback_(self, send_callback: Callable[[str], None], theme_callback: Callable[[], None]):
+    def initWithCallbacks_(self, callbacks: dict[str, Callable[[], None] | Callable[[str], None]]):
         self = super().init()
         if self is None:
             return None
-        self.send_callback = send_callback
-        self.theme_callback = theme_callback
-        self.last_output = ""
-        self.expanded = False
+        self.callbacks = callbacks
         self.theme = "light"
+        self.busy = False
+        self.last_output = ""
+        self.status_text = ""
+        log("PopoverViewController initialized")
         return self
 
     def loadView(self):
-        width, height = self.compact_size
-        self.view = self._build_root_view(width, height)
+        width, height = self.menu_size
+        root = MenuRootView.alloc().initWithFrame_(NSMakeRect(0, 0, width, height))
+        self.setView_(root)
 
-    def _build_root_view(self, width: float, height: float):
-        from AppKit import NSView
-
-        root = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, width, height))
-
-        self.input_field = NSTextField.alloc().initWithFrame_(NSMakeRect(12, height - 42, width - 56, 24))
+        self.input_field = NSTextField.alloc().initWithFrame_(NSMakeRect(12, height - 38, width - 24, 24))
         self.input_field.cell().setPlaceholderString_("Optional instruction...")
         root.addSubview_(self.input_field)
 
-        self.theme_button = NSButton.alloc().initWithFrame_(NSMakeRect(width - 36, height - 44, 24, 24))
-        self.theme_button.setBezelStyle_(NSBezelStyleRounded)
-        self.theme_button.setTitle_("☀︎")
-        self.theme_button.setTarget_(self)
-        self.theme_button.setAction_("themeClicked:")
-        root.addSubview_(self.theme_button)
+        self.status_label = NSTextField.alloc().initWithFrame_(NSMakeRect(12, height - 64, width - 24, 16))
+        self.status_label.setBezeled_(False)
+        self.status_label.setDrawsBackground_(False)
+        self.status_label.setEditable_(False)
+        self.status_label.setSelectable_(False)
+        self.status_label.setFont_(NSFont.systemFontOfSize_(11))
+        self.status_label.setStringValue_("")
+        root.addSubview_(self.status_label)
 
-        self.send_button = NSButton.alloc().initWithFrame_(NSMakeRect(12, height - 78, 90, 28))
-        self.send_button.setBezelStyle_(NSBezelStyleRounded)
-        self.send_button.setTitle_("Send")
-        self.send_button.setTarget_(self)
-        self.send_button.setAction_("sendClicked:")
+        self.send_button = self._make_button("Send", NSMakeRect(12, 42, 78, 28), "sendClicked:")
         root.addSubview_(self.send_button)
 
-        self.toggle_button = NSButton.alloc().initWithFrame_(NSMakeRect(112, height - 78, 110, 28))
-        self.toggle_button.setBezelStyle_(NSBezelStyleRounded)
-        self.toggle_button.setTitle_("Show Output")
-        self.toggle_button.setEnabled_(False)
-        self.toggle_button.setTarget_(self)
-        self.toggle_button.setAction_("toggleOutput:")
-        root.addSubview_(self.toggle_button)
+        self.show_button = self._make_button("Show", NSMakeRect(100, 42, 78, 28), "showClicked:")
+        self.show_button.setEnabled_(False)
+        root.addSubview_(self.show_button)
 
-        self.scroll_view = NSScrollView.alloc().initWithFrame_(NSMakeRect(12, 12, width - 24, height - 98))
-        self.scroll_view.setHasVerticalScroller_(True)
-        self.scroll_view.setAutohidesScrollers_(True)
+        self.theme_button = self._make_button("Theme: Light", NSMakeRect(188, 42, 112, 28), "themeClicked:")
+        root.addSubview_(self.theme_button)
 
-        self.output_view = NSTextView.alloc().initWithFrame_(self.scroll_view.bounds())
-        self.output_view.setEditable_(False)
-        self.output_view.setFont_(NSFont.systemFontOfSize_(12))
-        self.scroll_view.setDocumentView_(self.output_view)
-        self.scroll_view.setHidden_(True)
-        root.addSubview_(self.scroll_view)
-        return root
+        self.quit_button = self._make_button("Quit", NSMakeRect(310, 42, 38, 28), "quitClicked:")
+        root.addSubview_(self.quit_button)
+
+        log(f"Menu view loaded with size=({width}, {height})")
+        self.applyTheme_(self.theme)
+        self.setBusy_(self.busy)
+        self.setStatusText_(self.status_text)
+        self.setOutput_(self.last_output)
+
+    def _make_button(self, title: str, frame, action: str):
+        button = NSButton.alloc().initWithFrame_(frame)
+        button.setBezelStyle_(NSBezelStyleRounded)
+        button.setTitle_(title)
+        button.setTarget_(self)
+        button.setAction_(action)
+        return button
+
+    def _root_view(self):
+        return self.view()
+
+    def _ensure_view_loaded(self):
+        if not hasattr(self, "send_button"):
+            log("Menu view requested before load; loading lazily")
+            self.loadView()
 
     def sendClicked_(self, _sender):
-        self.send_callback(str(self.input_field.stringValue()).strip())
+        log("Menu Send button pressed")
+        callback = self.callbacks["send"]
+        callback(str(self.input_field.stringValue()).strip())
+
+    def showClicked_(self, _sender):
+        log("Menu Show button pressed")
+        self.callbacks["show"]()
 
     def themeClicked_(self, _sender):
-        self.theme_callback()
+        log("Menu Theme button pressed")
+        self.callbacks["theme"]()
 
-    def toggleOutput_(self, _sender):
-        self.setExpanded_(not self.expanded)
-
-    def setExpanded_(self, expanded: bool):
-        self.expanded = expanded
-        width, height = self.expanded_size if expanded else self.compact_size
-        self.view.setFrameSize_((width, height))
-
-        self.input_field.setFrame_(NSMakeRect(12, height - 42, width - 56, 24))
-        self.theme_button.setFrame_(NSMakeRect(width - 36, height - 44, 24, 24))
-        self.send_button.setFrame_(NSMakeRect(12, height - 78, 90, 28))
-        self.toggle_button.setFrame_(NSMakeRect(112, height - 78, 110, 28))
-
-        if expanded:
-            self.toggle_button.setTitle_("Hide Output")
-            self.scroll_view.setFrame_(NSMakeRect(12, 12, width - 24, height - 98))
-            self.scroll_view.setHidden_(False)
-        else:
-            self.toggle_button.setTitle_("Show Output")
-            self.scroll_view.setHidden_(True)
-
-        if self.view.window() is not None:
-            self.view.window().setContentSize_((width, height))
+    def quitClicked_(self, _sender):
+        log("Menu Quit button pressed")
+        self.callbacks["quit"]()
 
     def applyTheme_(self, theme: str):
         self.theme = theme
+        self._ensure_view_loaded()
         is_dark = theme == "dark"
-        self.theme_button.setTitle_("☾" if is_dark else "☀︎")
+        log(f"Applying menu theme={theme}")
         appearance_name = NSAppearanceNameDarkAqua if is_dark else NSAppearanceNameAqua
         appearance = NSAppearance.appearanceNamed_(appearance_name)
-        self.view.setAppearance_(appearance)
+        root = self._root_view()
+        root.setAppearance_(appearance)
+        background_color = (
+            NSColor.colorWithCalibratedWhite_alpha_(0.14, 1.0)
+            if is_dark
+            else NSColor.colorWithCalibratedWhite_alpha_(0.96, 1.0)
+        )
+        root.setBackgroundColor_(background_color)
+        self.theme_button.setTitle_(f"Theme: {'Dark' if is_dark else 'Light'}")
+        text_color = NSColor.secondaryLabelColor()
+        self.status_label.setTextColor_(text_color)
+
+    def setBusy_(self, busy: bool):
+        self.busy = busy
+        self._ensure_view_loaded()
+        log(f"Menu busy state changed to {busy}")
+        self.send_button.setEnabled_(not busy)
+        self.send_button.setTitle_("Sending..." if busy else "Send")
 
     def setOutput_(self, text: str):
         self.last_output = text
-        self.output_view.setString_(text)
-        self.toggle_button.setEnabled_(True)
-        self.setExpanded_(True)
+        self._ensure_view_loaded()
+        has_output = bool(text.strip())
+        self.show_button.setEnabled_(has_output)
+        log(f"Menu output updated; show_enabled={has_output}")
 
-    def setBusy_(self, busy: bool):
-        self.send_button.setEnabled_(not busy)
-        self.send_button.setTitle_("Sending..." if busy else "Send")
+    def setStatusText_(self, text: str):
+        self.status_text = text
+        self._ensure_view_loaded()
+        self.status_label.setStringValue_(text[:80])
+        log(f"Menu status text updated to: {text[:80]}")
