@@ -1,5 +1,8 @@
 {
   "provider": "chatgpt",
-  "theme": "light",
-  "hotkey_key": "space"
+  "theme": "dark",
+  "hotkey_key": "h",
+  "logging": 0,
+  "openai_api_key": "your_key_here",
+  "gemini_api_key": "your_key_here"
 }
