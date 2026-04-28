@@ -96,7 +96,7 @@ class PopoverViewController(NSViewController):
         self.theme_button = self._make_button("Light", NSMakeRect(158, 12, 64, 26), "themeClicked:")
         root.addSubview_(self.theme_button)
 
-        self.quit_button = self._make_button("Q", NSMakeRect(222, 12, 64, 26), "quitClicked:")
+        self.quit_button = self._make_button("Quit", NSMakeRect(222, 12, 64, 26), "quitClicked:")
         root.addSubview_(self.quit_button)
 
         log(f"Menu view loaded with size=({width}, {height})")
